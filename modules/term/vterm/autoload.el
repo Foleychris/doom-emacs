@@ -65,15 +65,62 @@ method to prepare vterm at the corresponding remote directory."
   (when (and (featurep 'tramp)
              (tramp-tramp-file-p default-directory))
     (message "default-directory is %s" default-directory)
-    (with-parsed-tramp-file-name default-directory path
-      (let ((method (cadr (assoc `tramp-login-program
-                                 (assoc path-method tramp-methods)))))
-        (vterm-send-string
-         (concat method " "
-                 (when path-user (concat path-user "@")) path-host))
+    (with-parsed-tramp-file-name default-directory nil
+      (let* ((sh-file-name-handler-p (tramp-sh-file-name-handler-p v))
+             (login-program
+              (tramp-get-method-parameter v 'tramp-login-program))
+             (login-args
+              (tramp-get-method-parameter v 'tramp-login-args))
+             (async-args
+              (tramp-get-method-parameter v 'tramp-async-args))
+             (direct-async-args
+              (tramp-get-method-parameter v 'tramp-direct-async-args))
+             ;; We don't create the temporary file.  In fact, it
+             ;; is just a prefix for the ControlPath option of
+             ;; ssh; the real temporary file has another name, and
+             ;; it is created and protected by ssh.  It is also
+             ;; removed by ssh when the connection is closed.  The
+             ;; temporary file name is cached in the main
+             ;; connection process, therefore we cannot use
+             ;; `tramp-get-connection-process'.
+             (tmpfile
+              (when sh-file-name-handler-p
+                (with-tramp-connection-property
+                    (tramp-get-process v) "temp-file"
+                  (tramp-compat-make-temp-name))))
+             (options
+              (when sh-file-name-handler-p
+                (tramp-compat-funcall
+                 'tramp-ssh-controlmaster-options v)))
+             spec p)
+
+        ;; Replace `login-args' place holders.
+        (setq
+         spec (format-spec-make ?t tmpfile)
+         options (format-spec (or options "") spec)
+         spec (format-spec-make
+               ?h (or host "") ?u (or user "") ?p (or port "")
+               ?c options ?l "")
+         ;; Add arguments for asynchronous processes.
+         login-args (append async-args direct-async-args login-args)
+         ;; Expand format spec.
+         login-args
+         (tramp-compat-flatten-tree
+          (mapcar
+           (lambda (x)
+             (setq x (mapcar (lambda (y) (format-spec y spec)) x))
+             (unless (member "" x) x))
+           login-args))
+         ;; Split ControlMaster options.
+         login-args
+         (tramp-compat-flatten-tree
+          (mapcar (lambda (x) (split-string x " ")) login-args))
+         p
+         (mapconcat  'identity `(,login-program ,@login-args) " "))
+        (vterm-send-string p)
         (vterm-send-return)
         (vterm-send-string
-         (concat "cd " path-localname))
+         (concat "cd " localname))
         (vterm-send-return)))))
 
 
