@@ -119,6 +119,23 @@ method to prepare vterm at the corresponding remote directory."
          (mapconcat  'identity `(,login-program ,@login-args) " "))
         (vterm-send-string p)
         (vterm-send-return)
+        (sleep-for 2)
+        (save-window-excursion
+          (pop-to-buffer "*scratch*"))
+        (setq current-pos 0)
+        (while (or (re-search-backward tramp-password-prompt-regexp (line-beginning-position) t)
+                   (re-search-backward tramp-wrong-passwd-regexp (line-beginning-position) t)
+                   (equal (point) (line-beginning-position)))
+
+          (if (equal current-pos (point))
+              (progn
+                (message "Sittin for 0"))
+            (progn
+              (message "at %s" (point))
+              (setq current-pos (point))
+              (vterm-send-string (read-passwd "password:"))
+              (vterm-send-return))))
+        (message "Changing to %s" localname)
         (vterm-send-string
          (concat "cd " localname))
         (vterm-send-return)))))
@@ -137,3 +154,4 @@ method to prepare vterm at the corresponding remote directory."
   (when +vterm--insert-point
     (goto-char +vterm--insert-point)
     (setq-local +vterm--insert-point nil)))
+(line-beginning-position)
